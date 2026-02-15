@@ -27,6 +27,14 @@ export interface Choir {
   dateCreated: string;
 }
 
+export interface Category {
+  id: string;
+  name: string;
+  color: string;
+  songCount: number;
+  dateCreated: string;
+}
+
 export interface AppSettings {
   fontSize: number;
   fontFamily: string;
@@ -40,6 +48,8 @@ const DB_NAME = 'choir_app.db';
 
 // Database reference - will be initialized when needed
 let db: any = null;
+let legacyDb: any = null;
+let useLegacy = false;
 
 // Dynamically import SQLite for native platforms
 const getDatabase = async () => {
@@ -47,15 +57,64 @@ const getDatabase = async () => {
     throw new Error('SQLite is not available on web platform');
   }
 
-  if (!db) {
+  // Try new API first if not already using legacy
+  if (!db && !useLegacy) {
     try {
-      const SQLite = await import('expo-sqlite');
-      db = await SQLite.openDatabaseAsync(DB_NAME);
+      const mod: any = await import('expo-sqlite');
+      const openAsync = mod?.openDatabaseAsync;
+      if (typeof openAsync !== 'function') {
+        // Fall back to legacy if new API not available
+        useLegacy = true;
+      } else {
+        db = await openAsync(DB_NAME);
+      }
     } catch (error) {
-      console.error('Error opening database:', error);
-      throw error;
+      console.warn('openDatabaseAsync failed, falling back to legacy API:', error);
+      useLegacy = true;
     }
   }
+
+  if (useLegacy) {
+    if (!legacyDb) {
+      const mod: any = await import('expo-sqlite');
+      legacyDb = mod.openDatabase(DB_NAME);
+    }
+    // Return a facade implementing the new API shape using legacy tx under the hood
+    return {
+      execAsync: async (sql: string) => {
+        await new Promise<void>((resolve, reject) => {
+          legacyDb.transaction((tx: any) => {
+            const stmts = sql.split(';').map((s: string) => s.trim()).filter(Boolean);
+            let i = 0;
+            const next = () => {
+              if (i >= stmts.length) return resolve();
+              tx.executeSql(stmts[i++], [], () => next(), (_t: any, err: any) => { reject(err); return true; });
+            };
+            next();
+          }, (err: any) => reject(err));
+        });
+      },
+      runAsync: async (sql: string, args: any[] = []) => {
+        await new Promise<void>((resolve, reject) => {
+          legacyDb.transaction((tx: any) => {
+            tx.executeSql(sql, args, () => resolve(), (_t: any, err: any) => { reject(err); return true; });
+          }, (err: any) => reject(err));
+        });
+      },
+      getAllAsync: async (sql: string, args: any[] = []) => {
+        return await new Promise<any[]>((resolve, reject) => {
+          legacyDb.transaction((tx: any) => {
+            tx.executeSql(sql, args, (_t: any, res: any) => {
+              const out: any[] = [];
+              for (let i = 0; i < res.rows.length; i++) out.push(res.rows.item(i));
+              resolve(out);
+            }, (_t: any, err: any) => { reject(err); return true; });
+          }, (err: any) => reject(err));
+        });
+      },
+    } as any;
+  }
+
   return db;
 };
 
@@ -74,9 +133,16 @@ const initializeDatabase = async (): Promise<void> => {
         lyrics TEXT NOT NULL,
         category TEXT NOT NULL,
         dateAdded TEXT NOT NULL,
-        isFavorite INTEGER NOT NULL DEFAULT 0
+        isFavorite INTEGER NOT NULL DEFAULT 0,
+        audioUri TEXT,
+        audioName TEXT,
+        audioSize INTEGER
       );
     `);
+    // Migration: add audio columns if upgrading existing DB
+    try { await database.execAsync(`ALTER TABLE songs ADD COLUMN audioUri TEXT;`); } catch (e) {}
+    try { await database.execAsync(`ALTER TABLE songs ADD COLUMN audioName TEXT;`); } catch (e) {}
+    try { await database.execAsync(`ALTER TABLE songs ADD COLUMN audioSize INTEGER;`); } catch (e) {}
 
     await database.execAsync(`
       CREATE TABLE IF NOT EXISTS members (
@@ -95,6 +161,16 @@ const initializeDatabase = async (): Promise<void> => {
         name TEXT NOT NULL,
         type TEXT NOT NULL,
         members TEXT NOT NULL,
+        dateCreated TEXT NOT NULL
+      );
+    `);
+
+    await database.execAsync(`
+      CREATE TABLE IF NOT EXISTS categories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        color TEXT NOT NULL,
+        songCount INTEGER NOT NULL DEFAULT 0,
         dateCreated TEXT NOT NULL
       );
     `);
@@ -156,6 +232,13 @@ const migrateFromAsyncStorage = async (): Promise<void> => {
       await saveChoirs(choirs);
     }
 
+    // Migrate categories
+    const categoriesData = await AsyncStorage.getItem('choir_app_categories');
+    if (categoriesData) {
+      const categories: Category[] = JSON.parse(categoriesData);
+      await saveCategories(categories);
+    }
+
     // Migrate settings
     const settingsData = await AsyncStorage.getItem('choir_app_settings');
     if (settingsData) {
@@ -186,6 +269,12 @@ const ensureDbInitialized = async (): Promise<void> => {
   }
 };
 
+export const waitForDbReady = async (): Promise<void> => {
+  if (Platform.OS !== 'web') {
+    await ensureDbInitialized();
+  }
+};
+
 // Songs
 export const saveSongs = async (songs: Song[]): Promise<void> => {
   if (Platform.OS === 'web') {
@@ -198,20 +287,23 @@ export const saveSongs = async (songs: Song[]): Promise<void> => {
     const database = await getDatabase();
 
     // Start a transaction
-    await database.execAsync('BEGIN TRANSACTION;');
+    await (database as any).execAsync('BEGIN TRANSACTION;');
 
     // Clear existing songs
-    await database.execAsync('DELETE FROM songs;');
+    await (database as any).execAsync('DELETE FROM songs;');
 
     // Insert all songs
     for (const song of songs) {
-      await database.runAsync(
-        'INSERT INTO songs (id, title, lyrics, category, dateAdded, isFavorite) VALUES (?, ?, ?, ?, ?, ?);',
-        [song.id, song.title, song.lyrics, song.category, song.dateAdded, song.isFavorite ? 1 : 0]
+      const audioUri = (song as any)?.audioFile?.uri || (song as any)?.audioUri || null;
+      const audioName = (song as any)?.audioFile?.name || (song as any)?.audioName || null;
+      const audioSize = (song as any)?.audioFile?.size || (song as any)?.audioSize || null;
+      await (database as any).runAsync(
+        'INSERT INTO songs (id, title, lyrics, category, dateAdded, isFavorite, audioUri, audioName, audioSize) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);',
+        [song.id, song.title, song.lyrics, song.category, song.dateAdded, song.isFavorite ? 1 : 0, audioUri, audioName, audioSize]
       );
     }
 
-    await database.execAsync('COMMIT;');
+    await (database as any).execAsync('COMMIT;');
   } catch (error) {
     console.error('Error saving songs:', error);
     throw error;
@@ -227,7 +319,7 @@ export const loadSongs = async (): Promise<Song[]> => {
   await ensureDbInitialized();
   try {
     const database = await getDatabase();
-    const result = await database.getAllAsync('SELECT * FROM songs ORDER BY dateAdded DESC;');
+    const result = await (database as any).getAllAsync('SELECT * FROM songs ORDER BY dateAdded DESC;');
 
     return result.map((item: any) => ({
       id: item.id,
@@ -236,6 +328,7 @@ export const loadSongs = async (): Promise<Song[]> => {
       category: item.category,
       dateAdded: item.dateAdded,
       isFavorite: item.isFavorite === 1,
+      audioFile: item.audioUri ? { uri: item.audioUri, name: item.audioName || 'audio', size: item.audioSize || 0 } : null,
     }));
   } catch (error) {
     console.error('Error loading songs:', error);
@@ -265,6 +358,18 @@ export const deleteSong = async (id: string): Promise<void> => {
   await saveSongs(filteredSongs);
 };
 
+// Recompute and persist category song counts based on current songs
+export const recomputeCategoryCounts = async (): Promise<void> => {
+  const [categories, songs] = await Promise.all([loadCategories(), loadSongs()]);
+  const countMap: Record<string, number> = {};
+  for (const s of songs) {
+    if (!s.category) continue;
+    countMap[s.category] = (countMap[s.category] || 0) + 1;
+  }
+  const updated = categories.map((c) => ({ ...c, songCount: countMap[c.id] || 0 }));
+  await saveCategories(updated);
+};
+
 // Members
 export const saveMembers = async (members: Member[]): Promise<void> => {
   if (Platform.OS === 'web') {
@@ -276,17 +381,17 @@ export const saveMembers = async (members: Member[]): Promise<void> => {
   try {
     const database = await getDatabase();
 
-    await database.execAsync('BEGIN TRANSACTION;');
-    await database.execAsync('DELETE FROM members;');
+    await (database as any).execAsync('BEGIN TRANSACTION;');
+    await (database as any).execAsync('DELETE FROM members;');
 
     for (const member of members) {
-      await database.runAsync(
+      await (database as any).runAsync(
         'INSERT INTO members (id, name, voicePart, email, phone, dateAdded) VALUES (?, ?, ?, ?, ?, ?);',
         [member.id, member.name, member.voicePart, member.email || null, member.phone || null, member.dateAdded]
       );
     }
 
-    await database.execAsync('COMMIT;');
+    await (database as any).execAsync('COMMIT;');
   } catch (error) {
     console.error('Error saving members:', error);
     throw error;
@@ -302,7 +407,7 @@ export const loadMembers = async (): Promise<Member[]> => {
   await ensureDbInitialized();
   try {
     const database = await getDatabase();
-    const result = await database.getAllAsync('SELECT * FROM members ORDER BY dateAdded DESC;');
+    const result = await (database as any).getAllAsync('SELECT * FROM members ORDER BY dateAdded DESC;');
 
     return result.map((item: any) => ({
       id: item.id,
@@ -340,6 +445,79 @@ export const deleteMember = async (id: string): Promise<void> => {
   await saveMembers(filteredMembers);
 };
 
+// Categories
+export const saveCategories = async (categories: Category[]): Promise<void> => {
+  if (Platform.OS === 'web') {
+    await AsyncStorage.setItem('choir_app_categories', JSON.stringify(categories));
+    return;
+  }
+
+  await ensureDbInitialized();
+  try {
+    const database = await getDatabase();
+
+    await (database as any).execAsync('BEGIN TRANSACTION;');
+    await (database as any).execAsync('DELETE FROM categories;');
+
+    for (const c of categories) {
+      await (database as any).runAsync(
+        'INSERT INTO categories (id, name, color, songCount, dateCreated) VALUES (?, ?, ?, ?, ?);',
+        [c.id, c.name, c.color, c.songCount, c.dateCreated]
+      );
+    }
+
+    await (database as any).execAsync('COMMIT;');
+  } catch (error) {
+    console.error('Error saving categories:', error);
+    throw error;
+  }
+};
+
+export const loadCategories = async (): Promise<Category[]> => {
+  if (Platform.OS === 'web') {
+    const data = await AsyncStorage.getItem('choir_app_categories');
+    return data ? JSON.parse(data) : [];
+  }
+
+  await ensureDbInitialized();
+  try {
+    const database = await getDatabase();
+    const result = await (database as any).getAllAsync('SELECT * FROM categories ORDER BY name ASC;');
+
+    return result.map((item: any) => ({
+      id: item.id,
+      name: item.name,
+      color: item.color,
+      songCount: item.songCount ?? 0,
+      dateCreated: item.dateCreated,
+    }));
+  } catch (error) {
+    console.error('Error loading categories:', error);
+    return [];
+  }
+};
+
+export const addCategory = async (category: Category): Promise<void> => {
+  const existing = await loadCategories();
+  existing.push(category);
+  await saveCategories(existing);
+};
+
+export const updateCategory = async (id: string, updates: Partial<Category>): Promise<void> => {
+  const categories = await loadCategories();
+  const index = categories.findIndex(c => c.id === id);
+  if (index !== -1) {
+    categories[index] = { ...categories[index], ...updates };
+    await saveCategories(categories);
+  }
+};
+
+export const deleteCategory = async (id: string): Promise<void> => {
+  const categories = await loadCategories();
+  const filtered = categories.filter(c => c.id !== id);
+  await saveCategories(filtered);
+};
+
 // Choirs
 export const saveChoirs = async (choirs: Choir[]): Promise<void> => {
   if (Platform.OS === 'web') {
@@ -351,17 +529,17 @@ export const saveChoirs = async (choirs: Choir[]): Promise<void> => {
   try {
     const database = await getDatabase();
 
-    await database.execAsync('BEGIN TRANSACTION;');
-    await database.execAsync('DELETE FROM choirs;');
+    await (database as any).execAsync('BEGIN TRANSACTION;');
+    await (database as any).execAsync('DELETE FROM choirs;');
 
     for (const choir of choirs) {
-      await database.runAsync(
+      await (database as any).runAsync(
         'INSERT INTO choirs (id, name, type, members, dateCreated) VALUES (?, ?, ?, ?, ?);',
         [choir.id, choir.name, choir.type, JSON.stringify(choir.members), choir.dateCreated]
       );
     }
 
-    await database.execAsync('COMMIT;');
+    await (database as any).execAsync('COMMIT;');
   } catch (error) {
     console.error('Error saving choirs:', error);
     throw error;
@@ -377,7 +555,7 @@ export const loadChoirs = async (): Promise<Choir[]> => {
   await ensureDbInitialized();
   try {
     const database = await getDatabase();
-    const result = await database.getAllAsync('SELECT * FROM choirs ORDER BY dateCreated DESC;');
+    const result = await (database as any).getAllAsync('SELECT * FROM choirs ORDER BY dateCreated DESC;');
 
     return result.map((item: any) => ({
       id: item.id,
@@ -425,7 +603,7 @@ export const saveSettings = async (settings: AppSettings): Promise<void> => {
   try {
     const database = await getDatabase();
 
-    await database.runAsync(
+    await (database as any).runAsync(
       'INSERT OR REPLACE INTO settings (id, fontSize, fontFamily, fontColor, backgroundColor, isDarkMode, verseRotationFrequency) VALUES (1, ?, ?, ?, ?, ?, ?);',
       [
         settings.fontSize,
@@ -455,7 +633,7 @@ export const loadSettings = async (): Promise<AppSettings> => {
   if (Platform.OS !== 'web') {
     try {
       const database = await getDatabase();
-      const result = await database.getAllAsync('SELECT * FROM settings WHERE id = 1;');
+      const result = await (database as any).getAllAsync('SELECT * FROM settings WHERE id = 1;');
 
       if (result.length > 0) {
         const item = result[0] as any;
@@ -509,7 +687,7 @@ export const shouldRotateVerse = async (frequency: 'daily' | 'weekly' | 'onAppOp
   await ensureDbInitialized();
   try {
     const database = await getDatabase();
-    const result = await database.getAllAsync('SELECT lastVerseDate FROM verse_rotation WHERE id = 1;') as { lastVerseDate?: string }[];
+    const result = await (database as any).getAllAsync('SELECT lastVerseDate FROM verse_rotation WHERE id = 1;') as { lastVerseDate?: string }[];
 
     if (result.length === 0 || !result[0].lastVerseDate) {
       return true;
@@ -545,7 +723,7 @@ export const updateLastVerseDate = async (): Promise<void> => {
   await ensureDbInitialized();
   try {
     const database = await getDatabase();
-    await database.runAsync(
+    await (database as any).runAsync(
       'INSERT OR REPLACE INTO verse_rotation (id, lastVerseDate) VALUES (1, ?);',
       [new Date().toISOString()]
     );
@@ -562,11 +740,12 @@ export const generateId = (): string => {
 
 export const exportData = async (): Promise<string> => {
   try {
-    const [songs, members, choirs, settings] = await Promise.all([
+    const [songs, members, choirs, settings, categories] = await Promise.all([
       loadSongs(),
       loadMembers(),
       loadChoirs(),
       loadSettings(),
+      loadCategories(),
     ]);
 
     const exportData = {
@@ -574,6 +753,7 @@ export const exportData = async (): Promise<string> => {
       members,
       choirs,
       settings,
+      categories,
       exportDate: new Date().toISOString(),
     };
 
@@ -593,6 +773,7 @@ export const importData = async (jsonData: string): Promise<void> => {
     if (data.members) promises.push(saveMembers(data.members));
     if (data.choirs) promises.push(saveChoirs(data.choirs));
     if (data.settings) promises.push(saveSettings(data.settings));
+    if (data.categories) promises.push(saveCategories(data.categories));
 
     await Promise.all(promises);
   } catch (error) {
@@ -601,39 +782,39 @@ export const importData = async (jsonData: string): Promise<void> => {
   }
 };
 
+    
+// Reset all user data (songs, members, categories, choirs)
+export const resetAllData = async (): Promise<void> => {
+  if (Platform.OS === 'web') {
+    await AsyncStorage.multiRemove([
+      'choir_app_songs',
+      'choir_app_members',
+      'choir_app_choirs',
+      'choir_app_categories'
+    ]);
+    return;
+  }
+  await ensureDbInitialized();
+  try {
+    const database = await getDatabase();
+    await (database as any).execAsync('BEGIN TRANSACTION;');
+    await (database as any).execAsync('DELETE FROM songs;');
+    await (database as any).execAsync('DELETE FROM members;');
+    await (database as any).execAsync('DELETE FROM categories;');
+    await (database as any).execAsync('DELETE FROM choirs;');
+    await (database as any).execAsync('COMMIT;');
+  } catch (e) {
+    console.error('Error resetting data:', e);
+    throw e;
+  }
+};
+
+// Proactively initialize DB for native to avoid race conditions
+if (Platform.OS !== 'web') {
+  initializeDatabase().catch((e) => console.error('DB init failed:', e));
+}
+
 // Initialize storage when imported (for web, use AsyncStorage immediately)
 if (Platform.OS === 'web') {
-  // For web, ensure we have default data in AsyncStorage
-  const initializeWebStorage = async () => {
-    try {
-      const songs = await loadSongs();
-      if (songs.length === 0) {
-        // Add some sample data for web
-        const sampleSongs: Song[] = [
-          {
-            id: generateId(),
-            title: 'Amazing Grace',
-            lyrics: 'Amazing grace, how sweet the sound...',
-            category: 'Hymns',
-            dateAdded: new Date().toISOString(),
-            isFavorite: true,
-          },
-          {
-            id: generateId(),
-            title: 'How Great Thou Art',
-            lyrics: 'O Lord my God, when I in awesome wonder...',
-            category: 'Hymns',
-            dateAdded: new Date().toISOString(),
-            isFavorite: false,
-          },
-        ];
-        await saveSongs(sampleSongs);
-      }
-    } catch (error) {
-      console.error('Error initializing web storage:', error);
-    }
-  };
-
-  // Initialize web storage (non-blocking)
-  initializeWebStorage();
+  // No default seeding; keep storage empty until user adds data.
 }

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
 	View,
 	Text,
@@ -8,32 +8,55 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FolderOpen } from "lucide-react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import GradientBackground from "../../components/GradientBackground";
 import SearchBar from "../../components/SearchBar";
 import FloatingActionButton from "../../components/FloatingActionButton";
 import CreateCategoryModal from "../../components/CreateCategoryModal";
 import CategoryDetailScreen from "../../components/CategoryDetailScreen";
-
-const defaultCategories = [
-	{ id: "1", name: "C Major", color: "#8B5CF6", songCount: 0 },
-	{ id: "2", name: "D Major", color: "#06B6D4", songCount: 0 },
-	{ id: "3", name: "A Minor", color: "#F43F5E", songCount: 0 },
-	{ id: "4", name: "Bati", color: "#F97316", songCount: 0 },
-	{ id: "5", name: "Ambasel", color: "#10B981", songCount: 0 },
-	{ id: "6", name: "Anchi Hoye", color: "#3B82F6", songCount: 0 },
-];
+import Card from "../../components/ui/Card";
+import { theme, colorFromString } from "../../components/theme";
+import { loadCategories, addCategory, Category } from "../../utils/storage";
+import { useIsFocused } from "@react-navigation/native";
+import { useEventBus } from "../../components/EventBus";
 
 export default function CategoriesScreen() {
 	const [searchText, setSearchText] = useState("");
-	const [categories, setCategories] = useState(defaultCategories);
+	const [categories, setCategories] = useState<Category[]>([]);
 	const [showCreateModal, setShowCreateModal] = useState(false);
 	const [selectedCategory, setSelectedCategory] = useState<any>(null);
+	const isFocused = useIsFocused();
+	const eventBus = useEventBus();
+
+	useEffect(() => {
+		(async () => {
+			const loaded = await loadCategories();
+			setCategories(loaded);
+		})();
+	}, []);
+
+	// refresh on focus and when songs are added anywhere
+	useEffect(() => {
+		(async () => {
+			const loaded = await loadCategories();
+			setCategories(loaded);
+		})();
+	}, [isFocused]);
+
+	useEffect(() => {
+		const unsub = eventBus.on("songs:added", async () => {
+			const loaded = await loadCategories();
+			setCategories(loaded);
+		});
+		return unsub;
+	}, [eventBus]);
 
 	const handleAddCategory = () => {
 		setShowCreateModal(true);
 	};
 
-	const handleSaveCategory = (newCategory: any) => {
+	const handleSaveCategory = async (newCategory: any) => {
+		await addCategory(newCategory as Category);
 		setCategories((prev) => [...prev, newCategory]);
 	};
 
@@ -79,32 +102,32 @@ export default function CategoriesScreen() {
 
 					{/* Categories List */}
 					{filteredCategories.length > 0 ? (
-						<View style={styles.categoriesContainer}>
-							{filteredCategories.map((category) => (
-								<TouchableOpacity
-									key={category.id}
-									style={styles.categoryCard}
-									onPress={() => handleCategoryPress(category)}
-								>
-									<View style={styles.categoryContent}>
-										<View
-											style={[
-												styles.categoryIcon,
-												{ backgroundColor: category.color },
-											]}
-										>
-											<FolderOpen size={20} color="#FFFFFF" />
-										</View>
-										<View style={styles.categoryInfo}>
-											<Text style={styles.categoryName}>{category.name}</Text>
-											<Text style={styles.categorySongs}>
-												{category.songCount} songs
-											</Text>
-										</View>
-									</View>
-								</TouchableOpacity>
-							))}
-						</View>
+					<View style={styles.categoriesContainer}>
+					{filteredCategories.map((category) => {
+					const color = category.color || colorFromString(category.name);
+					return (
+					<LinearGradient
+					key={category.id}
+					colors={[color, theme.colors.surface]}
+					start={{ x: 0, y: 0 }}
+					end={{ x: 1, y: 1 }}
+					style={styles.gradientCard}
+					>
+					<Card
+					title={category.name}
+					subtitle={`${category.songCount} songs`}
+					leading={
+					<View style={[styles.categoryIcon, { backgroundColor: color }]}>
+					<FolderOpen size={20} color="#FFFFFF" />
+					</View>
+					}
+					onPress={() => handleCategoryPress(category)}
+					style={{ backgroundColor: 'transparent', borderColor: 'rgba(255,255,255,0.08)' }}
+					/>
+					</LinearGradient>
+					);
+					})}
+					</View>
 					) : (
 						<View style={styles.emptyContainer}>
 							<FolderOpen size={64} color="#D1D5DB" style={styles.emptyIcon} />
@@ -138,26 +161,32 @@ const styles = StyleSheet.create({
 		paddingBottom: 10,
 	},
 	title: {
-		fontSize: 28,
-		fontWeight: "bold",
-		color: "#374151",
-		marginBottom: 4,
+	fontSize: 28,
+	fontWeight: "bold",
+	color: theme.colors.text,
+	marginBottom: 4,
 	},
 	subtitle: {
-		fontSize: 16,
-		color: "#6B7280",
+	fontSize: 16,
+	color: theme.colors.muted,
 	},
 	categoriesContainer: {
-		paddingHorizontal: 16,
+	paddingHorizontal: 16,
+	paddingBottom: 120,
 	},
 	categoryCard: {
-		backgroundColor: "#FFFFFF",
-		borderRadius: 16,
-		marginBottom: 12,
-		elevation: 2,
-		shadowOpacity: 0.1,
-		shadowRadius: 4,
-		shadowOffset: { width: 0, height: 2 },
+	backgroundColor: theme.colors.surface,
+	borderRadius: 16,
+	marginBottom: 12,
+	borderWidth: 1,
+	borderColor: theme.colors.border,
+	...theme.shadow.md,
+	},
+	gradientCard: {
+	borderRadius: 16,
+	marginBottom: 12,
+	padding: 1,
+	...theme.shadow.md,
 	},
 	categoryContent: {
 		flexDirection: "row",
@@ -176,14 +205,14 @@ const styles = StyleSheet.create({
 		flex: 1,
 	},
 	categoryName: {
-		fontSize: 18,
-		fontWeight: "600",
-		color: "#374151",
-		marginBottom: 4,
+	fontSize: 18,
+	fontWeight: "600",
+	color: theme.colors.text,
+	marginBottom: 4,
 	},
 	categorySongs: {
-		fontSize: 14,
-		color: "#6B7280",
+	fontSize: 14,
+	color: theme.colors.muted,
 	},
 	emptyContainer: {
 		flex: 1,

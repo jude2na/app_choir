@@ -60,8 +60,8 @@ export default function AddMemberModal({
 	};
 
 	const handleSave = () => {
-		if (!fullName.trim() || !voiceType) {
-			Alert.alert("Error", "Please fill in all required fields.");
+		if (!fullName.trim() || !voiceType || !email.trim() || !phone.trim()) {
+			Alert.alert("Error", "Please fill in all required fields (Name, Voice Type, Email, Phone).");
 			return;
 		}
 
@@ -111,7 +111,8 @@ export default function AddMemberModal({
 					<View style={styles.placeholder} />
 				</View>
 
-				<ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+				<ScrollView style={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
+                    <View style={styles.contentInner}>
 					{/* Profile Picture */}
 					<View style={styles.profileSection}>
 						<TouchableOpacity
@@ -213,7 +214,8 @@ export default function AddMemberModal({
 							placeholderTextColor="#9CA3AF"
 						/>
 					</View>
-				</ScrollView>
+				</View>
+                </ScrollView>
 
 				{/* Save Button */}
 				<View style={styles.bottomContainer}>
@@ -258,8 +260,13 @@ const styles = StyleSheet.create({
 		width: 40,
 	},
 	content: {
-		flex: 1,
-		paddingHorizontal: 16,
+	flex: 1,
+	paddingHorizontal: 16,
+	},
+	contentInner: {
+	alignSelf: "center",
+	width: "100%",
+	maxWidth: 600,
 	},
 	profileSection: {
 		alignItems: "center",

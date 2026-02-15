@@ -16,22 +16,20 @@ import SearchBar from "../../components/SearchBar";
 import FloatingActionButton from "../../components/FloatingActionButton";
 import AddSongModal from "../../components/AddSongModal";
 import CreateCategoryModal from "../../components/CreateCategoryModal";
-import { loadSongs, saveSongs } from "../../utils/storage";
+import { loadSongs, saveSongs, addSong, Song, loadCategories, addCategory, Category, recomputeCategoryCounts } from "../../utils/storage";
+import SongCard from "../../components/SongCard";
+import { theme } from "../../components/theme";
+
+import { useRouter } from "expo-router";
 
 export default function SongsScreen() {
+	const router = useRouter();
 	const [searchText, setSearchText] = useState("");
 	const [sortBy, setSortBy] = useState("recent");
 	const [showAddSongModal, setShowAddSongModal] = useState(false);
 	const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
 	const [songs, setSongs] = useState<any[]>([]);
-	const [categories, setCategories] = useState([
-		{ id: "1", name: "C Major", color: "#8B5CF6" },
-		{ id: "2", name: "D Major", color: "#06B6D4" },
-		{ id: "3", name: "A Minor", color: "#F43F5E" },
-		{ id: "4", name: "Bati", color: "#F97316" },
-		{ id: "5", name: "Ambasel", color: "#10B981" },
-		{ id: "6", name: "Anchi Hoye", color: "#3B82F6" },
-	]);
+	const [categories, setCategories] = useState<Category[]>([]);
 	const [refreshing, setRefreshing] = useState(false);
 	const eventBus = useEventBus();
 
@@ -44,6 +42,13 @@ export default function SongsScreen() {
 	useEffect(() => {
 		if (isFocused) loadData();
 	}, [isFocused]);
+
+	useEffect(() => {
+		(async () => {
+			const loaded = await loadCategories();
+			setCategories(loaded);
+		})();
+	}, []);
 
 	const loadData = async () => {
 		setRefreshing(true);
@@ -66,9 +71,13 @@ export default function SongsScreen() {
 	};
 
 	const handleSaveSong = async (newSong: any) => {
-		const updatedSongs = [...songs, newSong];
-		setSongs(updatedSongs);
-		await saveSongs(updatedSongs);
+		// Persist via storage helper and update UI immediately
+		await addSong(newSong as Song);
+		setSongs((prev) => [newSong, ...prev]);
+		// Recompute category counts and refresh categories state so chips display correctly
+		await recomputeCategoryCounts();
+		const cats = await loadCategories();
+		setCategories(cats);
 	};
 
 	const handleCreateCategory = () => {
@@ -76,7 +85,8 @@ export default function SongsScreen() {
 		setShowCreateCategoryModal(true);
 	};
 
-	const handleSaveCategory = (newCategory: any) => {
+	const handleSaveCategory = async (newCategory: any) => {
+		await addCategory(newCategory as Category);
 		setCategories((prev) => [...prev, newCategory]);
 		setShowCreateCategoryModal(false);
 		setShowAddSongModal(true);
@@ -92,10 +102,11 @@ export default function SongsScreen() {
 				<FloatingActionButton onPress={handleAddSong} />
 
 				<ScrollView
-					showsVerticalScrollIndicator={false}
-					refreshControl={
-						<RefreshControl refreshing={refreshing} onRefresh={loadData} />
-					}
+				showsVerticalScrollIndicator={false}
+				contentContainerStyle={{ paddingBottom: 120 }}
+				refreshControl={
+				<RefreshControl refreshing={refreshing} onRefresh={loadData} />
+				}
 				>
 					{/* Header */}
 					<View style={styles.header}>
@@ -120,8 +131,8 @@ export default function SongsScreen() {
 							onPress={() => setSortBy("recent")}
 						>
 							<Clock
-								size={16}
-								color={sortBy === "recent" ? "#FFFFFF" : "#6B7280"}
+							size={16}
+							color={sortBy === "recent" ? theme.colors.text : theme.colors.muted}
 							/>
 							<Text
 								style={[
@@ -141,8 +152,8 @@ export default function SongsScreen() {
 							onPress={() => setSortBy("alphabetical")}
 						>
 							<ArrowUpDown
-								size={16}
-								color={sortBy === "alphabetical" ? "#FFFFFF" : "#6B7280"}
+							size={16}
+							color={sortBy === "alphabetical" ? theme.colors.text : theme.colors.muted}
 							/>
 							<Text
 								style={[
@@ -157,9 +168,16 @@ export default function SongsScreen() {
 
 					{/* Songs list / empty state */}
 					{(() => {
-						const filtered = songs.filter((s) =>
+						let filtered = songs.filter((s) =>
 							s.title.toLowerCase().includes(searchText.toLowerCase())
 						);
+						// sorting
+						filtered = filtered.slice();
+						if (sortBy === 'alphabetical') {
+							filtered.sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }));
+						} else {
+							filtered.sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime());
+						}
 						if (filtered.length === 0) {
 							return (
 								<View style={styles.emptyContainer}>
@@ -169,14 +187,23 @@ export default function SongsScreen() {
 						}
 
 						return (
-							<View style={styles.listContainer}>
-								{filtered.map((s) => (
-									<View key={s.id} style={styles.songItem}>
-										<Text style={styles.songTitle}>{s.title}</Text>
-										<Text style={styles.songMeta}>{s.category}</Text>
-									</View>
-								))}
-							</View>
+						<View style={styles.listContainer}>
+						{filtered.map((s) => {
+						const catName = categories.find((c) => c.id === s?.category)?.name || (typeof s?.category === 'string' ? s.category : '');
+						const normalized = {
+						...s,
+						composer: typeof s?.composer === "string" ? s.composer : "",
+						categories: s?.category ? [catName] : Array.isArray(s?.categories) ? s.categories : [],
+						};
+						return (
+						<SongCard
+						key={s.id}
+						song={normalized}
+						onPress={() => router.push(`/song/${s.id}`)}
+						/>
+						);
+						})}
+						</View>
 						);
 					})()}
 				</ScrollView>
@@ -212,14 +239,14 @@ const styles = StyleSheet.create({
 		paddingBottom: 10,
 	},
 	title: {
-		fontSize: 28,
-		fontWeight: "bold",
-		color: "#374151",
-		marginBottom: 4,
+	fontSize: 28,
+	fontWeight: "bold",
+	color: theme.colors.text,
+	marginBottom: 4,
 	},
 	subtitle: {
-		fontSize: 16,
-		color: "#6B7280",
+	fontSize: 16,
+	color: theme.colors.muted,
 	},
 	filterContainer: {
 		flexDirection: "row",
@@ -228,24 +255,26 @@ const styles = StyleSheet.create({
 		gap: 12,
 	},
 	filterButton: {
-		flexDirection: "row",
-		alignItems: "center",
-		backgroundColor: "#F1F5F9",
-		paddingHorizontal: 16,
-		paddingVertical: 8,
-		borderRadius: 20,
-		gap: 6,
+	flexDirection: "row",
+	alignItems: "center",
+	backgroundColor: theme.colors.surfaceAlt,
+	paddingHorizontal: 16,
+	paddingVertical: 8,
+	borderRadius: 20,
+	gap: 6,
+	borderWidth: 1,
+	borderColor: theme.colors.border,
 	},
 	filterButtonActive: {
-		backgroundColor: "#374151",
+	backgroundColor: theme.colors.primary,
 	},
 	filterText: {
-		fontSize: 14,
-		color: "#6B7280",
-		fontWeight: "500",
+	fontSize: 14,
+	color: theme.colors.muted,
+	fontWeight: "500",
 	},
 	filterTextActive: {
-		color: "#FFFFFF",
+	color: theme.colors.text,
 	},
 	emptyContainer: {
 		flex: 1,

@@ -15,7 +15,9 @@ import GradientBackground from "../../components/GradientBackground";
 import SearchBar from "../../components/SearchBar";
 import FloatingActionButton from "../../components/FloatingActionButton";
 import AddMemberModal from "../../components/AddMemberModal";
-import { loadMembers, saveMembers } from "../../utils/storage";
+import { loadMembers, saveMembers, addMember, Member } from "../../utils/storage";
+import Card from "../../components/ui/Card";
+import { theme, initialsFromName, colorFromString } from "../../components/theme";
 
 const voiceParts = [
 	{ name: "All", count: 0 },
@@ -64,9 +66,8 @@ export default function MembersScreen() {
 	};
 
 	const handleSaveMember = async (newMember: any) => {
-		const updatedMembers = [...members, newMember];
-		setMembers(updatedMembers);
-		await saveMembers(updatedMembers);
+		await addMember(newMember as Member);
+		setMembers((prev) => [newMember, ...prev]);
 	};
 
 	return (
@@ -141,14 +142,34 @@ export default function MembersScreen() {
 						}
 
 						return (
-							<View style={styles.listContainer}>
-								{filtered.map((m) => (
-									<View key={m.id} style={styles.memberItem}>
-										<Text style={styles.memberName}>{m.name}</Text>
-										<Text style={styles.memberPart}>{m.voicePart}</Text>
-									</View>
-								))}
-							</View>
+						<View style={styles.listContainer}>
+						{filtered
+						.slice()
+						.sort((a, b) => a.name.localeCompare(b.name))
+						.map((m) => (
+						<Card
+						key={m.id}
+						title={m.name}
+						subtitle={m.voicePart || "Member"}
+						leading={
+						<View
+						style={{
+						width: 44,
+						height: 44,
+						borderRadius: 22,
+						backgroundColor: colorFromString(m.name),
+						alignItems: 'center',
+						justifyContent: 'center',
+						}}
+						>
+						<Text style={{ color: '#fff', fontWeight: '800' }}>
+						{initialsFromName(m.name)}
+						</Text>
+						</View>
+						}
+						/>
+						))}
+						</View>
 						);
 					})()}
 				</ScrollView>
@@ -173,14 +194,14 @@ const styles = StyleSheet.create({
 		paddingBottom: 10,
 	},
 	title: {
-		fontSize: 28,
-		fontWeight: "bold",
-		color: "#374151",
-		marginBottom: 4,
+	fontSize: 28,
+	fontWeight: "bold",
+	color: theme.colors.text,
+	marginBottom: 4,
 	},
 	subtitle: {
-		fontSize: 16,
-		color: "#6B7280",
+	fontSize: 16,
+	color: theme.colors.muted,
 	},
 	filterContainer: {
 		paddingHorizontal: 16,
@@ -228,8 +249,8 @@ const styles = StyleSheet.create({
 		fontWeight: "500",
 	},
 	listContainer: {
-		paddingHorizontal: 16,
-		paddingBottom: 24,
+	paddingHorizontal: 16,
+	paddingBottom: 120,
 	},
 	memberItem: {
 		backgroundColor: "#FFFFFF",

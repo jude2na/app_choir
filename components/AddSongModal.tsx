@@ -62,6 +62,10 @@ export default function AddSongModal({
 			Alert.alert("Error", "Please enter a song title.");
 			return;
 		}
+		if (!selectedCategory) {
+			Alert.alert("Error", "Please select a category for the song.");
+			return;
+		}
 
 		const song = {
 			id: Date.now().toString(),
@@ -119,7 +123,8 @@ export default function AddSongModal({
 					<View style={styles.placeholder} />
 				</View>
 
-				<ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+				<ScrollView style={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
+                    <View style={styles.contentInner}>
 					{/* Song Title */}
 					<View style={styles.fieldContainer}>
 						<Text style={styles.label}>Song Title *</Text>
@@ -227,7 +232,8 @@ export default function AddSongModal({
 							placeholderTextColor="#9CA3AF"
 						/>
 					</View>
-				</ScrollView>
+				</View>
+                </ScrollView>
 
 				{/* Save Button */}
 				<View style={styles.bottomContainer}>
@@ -272,9 +278,14 @@ const styles = StyleSheet.create({
 		width: 40,
 	},
 	content: {
-		flex: 1,
-		paddingHorizontal: 16,
-		paddingTop: 16,
+	flex: 1,
+	paddingHorizontal: 16,
+	paddingTop: 16,
+	},
+	contentInner: {
+	alignSelf: "center",
+	width: "100%",
+	maxWidth: 600,
 	},
 	fieldContainer: {
 		marginBottom: 24,

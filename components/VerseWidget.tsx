@@ -7,6 +7,8 @@ import {
 	useWindowDimensions,
 } from "react-native";
 import { BookOpen } from "lucide-react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { theme, colorFromString } from "./theme";
 
 const verses = [
 	{
@@ -69,7 +71,7 @@ export default function VerseWidget() {
 	return (
 		<View style={styles.wrapper}>
 			<View style={styles.header}>
-				<BookOpen size={20} color="#8B5CF6" />
+				<BookOpen size={20} color={theme.colors.primary} />
 				<Text style={styles.headerText}>Daily Verse</Text>
 			</View>
 
@@ -83,13 +85,16 @@ export default function VerseWidget() {
 				contentContainerStyle={{ paddingHorizontal: 16 }}
 			>
 				{verses.map((v, i) => (
-					<View
+					<LinearGradient
 						key={i}
+						colors={[colorFromString(v.reference), theme.colors.surfaceAlt]}
+						start={{ x: 0, y: 0 }}
+						end={{ x: 1, y: 1 }}
 						style={[styles.container, { width: cardWidth, marginRight: 16 }]}
 					>
 						<Text style={styles.verseText}>{v.text}</Text>
 						<Text style={styles.reference}>— {v.reference}</Text>
-					</View>
+					</LinearGradient>
 				))}
 			</ScrollView>
 		</View>
@@ -101,14 +106,13 @@ const styles = StyleSheet.create({
 		marginVertical: 12,
 	},
 	container: {
-		backgroundColor: "#FFFFFF",
 		borderRadius: 16,
 		padding: 20,
 		// no outer margin here; ScrollView handles spacing
-		elevation: 2,
-		shadowOpacity: 0.08,
-		shadowRadius: 6,
-		shadowOffset: { width: 0, height: 2 },
+		elevation: 3,
+		shadowOpacity: 0.18,
+		shadowRadius: 8,
+		shadowOffset: { width: 0, height: 4 },
 	},
 	header: {
 		flexDirection: "row",
@@ -118,21 +122,21 @@ const styles = StyleSheet.create({
 	},
 	headerText: {
 		fontSize: 16,
-		fontWeight: "600",
-		color: "#374151",
+		fontWeight: "700",
+		color: theme.colors.text,
 		marginLeft: 8,
 	},
 	verseText: {
 		fontSize: 16,
-		color: "#4B5563",
+		color: theme.colors.text,
 		lineHeight: 24,
 		fontStyle: "italic",
 		marginBottom: 8,
 	},
 	reference: {
 		fontSize: 14,
-		color: "#8B5CF6",
-		fontWeight: "500",
+		color: theme.colors.accent,
+		fontWeight: "700",
 		textAlign: "right",
 	},
 });

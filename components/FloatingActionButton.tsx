@@ -19,10 +19,10 @@ export default function FloatingActionButton({
 		<TouchableOpacity
 			style={[styles.container, { bottom: 24 + insets.bottom }]}
 			onPress={onPress}
-			activeOpacity={0.85}
-			hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+			activeOpacity={0.88}
+			hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
 		>
-			<LinearGradient colors={["#8B5CF6", "#A855F7"]} style={styles.gradient}>
+			<LinearGradient colors={["#6C5CE7", "#00D2D3"]} start={{x:0,y:0}} end={{x:1,y:1}} style={styles.gradient}>
 				<Plus size={24} color="#FFFFFF" />
 			</LinearGradient>
 		</TouchableOpacity>
@@ -32,18 +32,18 @@ export default function FloatingActionButton({
 const styles = StyleSheet.create({
 	container: {
 		position: "absolute",
-		right: 16,
+		right: 20,
 		bottom: 24,
-		borderRadius: 14,
-		elevation: 6,
-		shadowOpacity: 0.25,
-		shadowRadius: 6,
-		shadowOffset: { width: 0, height: 3 },
+		borderRadius: 18,
+		elevation: 8,
+		shadowOpacity: 0.3,
+		shadowRadius: 10,
+		shadowOffset: { width: 0, height: 6 },
 	},
 	gradient: {
-		width: 48,
-		height: 48,
-		borderRadius: 14,
+		width: 56,
+		height: 56,
+		borderRadius: 18,
 		justifyContent: "center",
 		alignItems: "center",
 	},

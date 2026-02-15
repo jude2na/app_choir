@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
 	View,
 	Text,
@@ -12,6 +12,8 @@ import { ArrowLeft, Music, Search, Heart, Play } from "lucide-react-native";
 import GradientBackground from "./GradientBackground";
 import SearchBar from "./SearchBar";
 import FloatingActionButton from "./FloatingActionButton";
+import { loadSongs } from "../utils/storage";
+import { useRouter } from "expo-router";
 
 interface Song {
 	id: string;
@@ -45,8 +47,18 @@ export default function CategoryDetailScreen({
 	onToggleFavorite,
 }: CategoryDetailScreenProps) {
 	const [searchText, setSearchText] = useState("");
+	const [categorySongs, setCategorySongs] = useState<Song[]>(songs || []);
+	const router = useRouter();
 
-	const filteredSongs = songs.filter(
+	useEffect(() => {
+		(async () => {
+			const all = await loadSongs();
+			const filtered = all.filter((s) => s.category === category.id || s.category === category.name);
+			setCategorySongs(filtered as any);
+		})();
+	}, [category?.id]);
+
+	const filteredSongs = categorySongs.filter(
 		(song) =>
 			song.title.toLowerCase().includes(searchText.toLowerCase()) ||
 			(song.composer &&
@@ -54,7 +66,7 @@ export default function CategoryDetailScreen({
 	);
 
 	const renderSongItem = ({ item }: { item: Song }) => (
-		<TouchableOpacity style={styles.songCard} onPress={() => onSongPress(item)}>
+		<TouchableOpacity style={styles.songCard} onPress={() => router.push(`/song/${item.id}`)}>
 			<View style={styles.songContent}>
 				<View style={styles.songIcon}>
 					<Music size={20} color={category.color} />
@@ -106,7 +118,7 @@ export default function CategoryDetailScreen({
 						/>
 						<View style={styles.headerText}>
 							<Text style={styles.categoryName}>{category.name}</Text>
-							<Text style={styles.songCount}>{songs.length} songs</Text>
+							<Text style={styles.songCount}>{categorySongs.length} songs</Text>
 						</View>
 					</View>
 				</View>

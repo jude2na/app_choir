@@ -17,6 +17,7 @@ import GradientBackground from "../../components/GradientBackground";
 import VerseWidget from "../../components/VerseWidget";
 import StatsCard from "../../components/StatsCard";
 import FloatingActionButton from "../../components/FloatingActionButton";
+import { useRouter } from "expo-router";
 import AddSongModal from "../../components/AddSongModal";
 import AddMemberModal from "../../components/AddMemberModal";
 import CreateCategoryModal from "../../components/CreateCategoryModal";
@@ -27,29 +28,24 @@ import {
 	loadMembers,
 	Song,
 	Member,
+	loadCategories,
 } from "../../utils/storage";
 import { useEventBus } from "../../components/EventBus";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-const defaultCategories = [
-	{ id: "1", name: "C Major", color: "#8B5CF6", songCount: 0 },
-	{ id: "2", name: "D Major", color: "#06B6D4", songCount: 0 },
-	{ id: "3", name: "A Minor", color: "#F43F5E", songCount: 0 },
-	{ id: "4", name: "Bati", color: "#F97316", songCount: 0 },
-	{ id: "5", name: "Ambasel", color: "#10B981", songCount: 0 },
-	{ id: "6", name: "Anchi Hoye", color: "#3B82F6", songCount: 0 },
-];
 
 export default function HomeScreen() {
+	const router = useRouter();
 	const [searchText, setSearchText] = useState("");
 	const [songs, setSongs] = useState<Song[]>([]);
 	const [members, setMembers] = useState<Member[]>([]);
-	const [categories, setCategories] = useState(defaultCategories);
+	const [categories, setCategories] = useState<any[]>([]);
 	const [showAddSongModal, setShowAddSongModal] = useState(false);
 	const [showAddMemberModal, setShowAddMemberModal] = useState(false);
 	const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false);
 	const [showQuickActions, setShowQuickActions] = useState(false);
+	const [sortBy, setSortBy] = useState<'recent' | 'alphabetical'>('recent');
 	const insets = useSafeAreaInsets();
 
 	// get event bus from provider
@@ -57,6 +53,10 @@ export default function HomeScreen() {
 
 	useEffect(() => {
 		loadData();
+		(async () => {
+			const cats = await loadCategories();
+			setCategories(cats);
+		})();
 	}, []);
 
 	const loadData = async () => {
@@ -87,6 +87,9 @@ export default function HomeScreen() {
 		await saveSongs(updatedSongs);
 		// notify other screens
 		eventBus?.emit("songs:added", song);
+		// refresh categories to reflect counts and latest list
+		const cats = await loadCategories();
+		setCategories(cats);
 	};
 
 	const handleSaveMember = async (member: Member) => {
@@ -108,6 +111,26 @@ export default function HomeScreen() {
 
 	const closeQuickActions = () => {
 		setShowQuickActions(false);
+	};
+
+	// refresh categories when songs are added anywhere in the app
+	useEffect(() => {
+		const unsub = eventBus.on("songs:added", async () => {
+			const cats = await loadCategories();
+			setCategories(cats);
+		});
+		return unsub;
+	}, [eventBus]);
+
+	// Helper: sorted songs based on selected sort option
+	const getSortedSongs = () => {
+		const copy = [...songs];
+		if (sortBy === 'alphabetical') {
+			copy.sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }));
+		} else {
+			copy.sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime());
+		}
+		return copy;
 	};
 
 	// Stats data for horizontal scroll
@@ -216,7 +239,17 @@ export default function HomeScreen() {
 						</View>
 					</View>
 
-					{/* Recent Songs Preview */}
+					{/* Sort Controls */}
+				<View style={{ marginTop: 12, paddingHorizontal: 16, flexDirection: 'row', gap: 12 }}>
+					<TouchableOpacity onPress={() => setSortBy('recent')} style={{ backgroundColor: sortBy === 'recent' ? '#6C5CE7' : '#1A1F2B', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: '#202533' }}>
+						<Text style={{ color: '#EAEAF0', fontWeight: '600' }}>Recent</Text>
+					</TouchableOpacity>
+					<TouchableOpacity onPress={() => setSortBy('alphabetical')} style={{ backgroundColor: sortBy === 'alphabetical' ? '#6C5CE7' : '#1A1F2B', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: '#202533' }}>
+						<Text style={{ color: '#EAEAF0', fontWeight: '600' }}>A–Z</Text>
+					</TouchableOpacity>
+				</View>
+
+				{/* Recent Songs Preview */}
 					<View style={styles.recentSection}>
 						<View style={styles.sectionHeader}>
 							<Text style={styles.sectionTitle}>Recent Songs</Text>
@@ -237,19 +270,19 @@ export default function HomeScreen() {
 							</View>
 						) : (
 							<View style={styles.recentList}>
-								{songs.slice(0, 3).map((song) => (
-									<View key={song.id} style={styles.recentItem}>
-										<View style={styles.recentItemContent}>
-											<Music size={18} color="#8B5CF6" />
-											<View style={styles.recentItemText}>
-												<Text style={styles.recentItemTitle}>{song.title}</Text>
-												<Text style={styles.recentItemSubtitle}>
-													{song.composer || "No composer"}
-												</Text>
-											</View>
-										</View>
-									</View>
-								))}
+							{getSortedSongs().slice(0, 3).map((song) => (
+							<TouchableOpacity key={song.id} style={styles.recentItem} onPress={() => router.push(`/song/${song.id}`)}>
+							<View style={styles.recentItemContent}>
+							<Music size={18} color="#8B5CF6" />
+							<View style={styles.recentItemText}>
+							<Text style={styles.recentItemTitle}>{song.title}</Text>
+							<Text style={styles.recentItemSubtitle}>
+							{typeof (song as any)?.composer === 'string' && (song as any).composer.trim().length > 0 ? (song as any).composer : 'Unknown Composer'}
+							</Text>
+							</View>
+							</View>
+							</TouchableOpacity>
+							))}
 							</View>
 						)}
 					</View>
