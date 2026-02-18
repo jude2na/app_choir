@@ -5,7 +5,6 @@ import {
 	StyleSheet,
 	ScrollView,
 	TouchableOpacity,
-	FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ArrowLeft, Music, Search, Heart, Play } from "lucide-react-native";
@@ -14,6 +13,7 @@ import SearchBar from "./SearchBar";
 import FloatingActionButton from "./FloatingActionButton";
 import { loadSongs } from "../utils/storage";
 import { useRouter } from "expo-router";
+import SongCard from "./SongCard";
 
 interface Song {
 	id: string;
@@ -53,50 +53,20 @@ export default function CategoryDetailScreen({
 	useEffect(() => {
 		(async () => {
 			const all = await loadSongs();
-			const filtered = all.filter((s) => s.category === category.id || s.category === category.name);
+			const filtered = all.filter((s) => 
+				s.category === category.id || 
+				s.category === category.name ||
+				(typeof s.category === 'string' && s.category.toLowerCase() === category.name.toLowerCase())
+			);
 			setCategorySongs(filtered as any);
 		})();
-	}, [category?.id]);
+	}, [category?.id, category?.name]);
 
 	const filteredSongs = categorySongs.filter(
 		(song) =>
 			song.title.toLowerCase().includes(searchText.toLowerCase()) ||
 			(song.composer &&
 				song.composer.toLowerCase().includes(searchText.toLowerCase()))
-	);
-
-	const renderSongItem = ({ item }: { item: Song }) => (
-		<TouchableOpacity style={styles.songCard} onPress={() => router.push(`/song/${item.id}`)}>
-			<View style={styles.songContent}>
-				<View style={styles.songIcon}>
-					<Music size={20} color={category.color} />
-				</View>
-				<View style={styles.songInfo}>
-					<Text style={styles.songTitle}>{item.title}</Text>
-					{item.composer && (
-						<Text style={styles.songComposer}>by {item.composer}</Text>
-					)}
-					<Text style={styles.songDate}>
-						Added {new Date(item.dateAdded).toLocaleDateString()}
-					</Text>
-				</View>
-				<View style={styles.songActions}>
-					<TouchableOpacity
-						style={styles.favoriteButton}
-						onPress={() => onToggleFavorite(item.id)}
-					>
-						<Heart
-							size={20}
-							color={item.isFavorite ? "#F43F5E" : "#9CA3AF"}
-							fill={item.isFavorite ? "#F43F5E" : "none"}
-						/>
-					</TouchableOpacity>
-					<TouchableOpacity style={styles.playButton}>
-						<Play size={16} color="#FFFFFF" />
-					</TouchableOpacity>
-				</View>
-			</View>
-		</TouchableOpacity>
 	);
 
 	return (
@@ -132,13 +102,25 @@ export default function CategoryDetailScreen({
 
 				{/* Songs List */}
 				{filteredSongs.length > 0 ? (
-					<FlatList
-						data={filteredSongs}
-						renderItem={renderSongItem}
-						keyExtractor={(item) => item.id}
+					<ScrollView 
 						contentContainerStyle={styles.songsList}
 						showsVerticalScrollIndicator={false}
-					/>
+					>
+						{filteredSongs.map((song) => {
+							const normalizedSong = {
+								...song,
+								composer: typeof song?.composer === "string" ? song.composer : "",
+								categories: [category.name],
+							};
+							return (
+								<SongCard
+									key={song.id}
+									song={normalizedSong}
+									onPress={() => router.push(`/song/${song.id}`)}
+								/>
+							);
+						})}
+					</ScrollView>
 				) : (
 					<View style={styles.emptyContainer}>
 						<Music size={64} color="#D1D5DB" style={styles.emptyIcon} />
@@ -198,63 +180,6 @@ const styles = StyleSheet.create({
 	songsList: {
 		paddingHorizontal: 16,
 		paddingBottom: 100,
-	},
-	songCard: {
-		backgroundColor: "#FFFFFF",
-		borderRadius: 16,
-		marginBottom: 12,
-		elevation: 2,
-		shadowOpacity: 0.1,
-		shadowRadius: 4,
-		shadowOffset: { width: 0, height: 2 },
-	},
-	songContent: {
-		flexDirection: "row",
-		alignItems: "center",
-		padding: 16,
-	},
-	songIcon: {
-		width: 40,
-		height: 40,
-		borderRadius: 20,
-		backgroundColor: "#F3F4F6",
-		justifyContent: "center",
-		alignItems: "center",
-		marginRight: 12,
-	},
-	songInfo: {
-		flex: 1,
-	},
-	songTitle: {
-		fontSize: 16,
-		fontWeight: "600",
-		color: "#374151",
-		marginBottom: 2,
-	},
-	songComposer: {
-		fontSize: 14,
-		color: "#6B7280",
-		marginBottom: 2,
-	},
-	songDate: {
-		fontSize: 12,
-		color: "#9CA3AF",
-	},
-	songActions: {
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 8,
-	},
-	favoriteButton: {
-		padding: 8,
-	},
-	playButton: {
-		width: 32,
-		height: 32,
-		borderRadius: 16,
-		backgroundColor: "#8B5CF6",
-		justifyContent: "center",
-		alignItems: "center",
 	},
 	emptyContainer: {
 		flex: 1,

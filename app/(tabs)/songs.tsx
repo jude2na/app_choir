@@ -74,10 +74,11 @@ export default function SongsScreen() {
 		// Persist via storage helper and update UI immediately
 		await addSong(newSong as Song);
 		setSongs((prev) => [newSong, ...prev]);
-		// Recompute category counts and refresh categories state so chips display correctly
-		await recomputeCategoryCounts();
-		const cats = await loadCategories();
-		setCategories(cats);
+		// Refresh categories to reflect updated counts
+		const updatedCategories = await loadCategories();
+		setCategories(updatedCategories);
+		// Notify other screens
+		eventBus?.emit("songs:added", newSong);
 	};
 
 	const handleCreateCategory = () => {
@@ -87,7 +88,8 @@ export default function SongsScreen() {
 
 	const handleSaveCategory = async (newCategory: any) => {
 		await addCategory(newCategory as Category);
-		setCategories((prev) => [...prev, newCategory]);
+		const updatedCategories = await loadCategories();
+		setCategories(updatedCategories);
 		setShowCreateCategoryModal(false);
 		setShowAddSongModal(true);
 	};

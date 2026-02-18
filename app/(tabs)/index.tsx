@@ -87,9 +87,10 @@ export default function HomeScreen() {
 		await saveSongs(updatedSongs);
 		// notify other screens
 		eventBus?.emit("songs:added", song);
-		// refresh categories to reflect counts and latest list
-		const cats = await loadCategories();
-		setCategories(cats);
+		// refresh categories to reflect updated counts
+		await recomputeCategoryCounts();
+		const updatedCategories = await loadCategories();
+		setCategories(updatedCategories);
 	};
 
 	const handleSaveMember = async (member: Member) => {
@@ -100,8 +101,10 @@ export default function HomeScreen() {
 		eventBus?.emit("members:added", member);
 	};
 
-	const handleCreateCategory = (category: any) => {
-		setCategories((prev) => [...prev, category]);
+	const handleCreateCategory = async (category: any) => {
+		await addCategory(category);
+		const updatedCategories = await loadCategories();
+		setCategories(updatedCategories);
 		setShowCreateCategoryModal(false);
 	};
 
@@ -116,8 +119,9 @@ export default function HomeScreen() {
 	// refresh categories when songs are added anywhere in the app
 	useEffect(() => {
 		const unsub = eventBus.on("songs:added", async () => {
-			const cats = await loadCategories();
-			setCategories(cats);
+			await recomputeCategoryCounts();
+			const updatedCategories = await loadCategories();
+			setCategories(updatedCategories);
 		});
 		return unsub;
 	}, [eventBus]);

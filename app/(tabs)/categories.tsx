@@ -57,7 +57,8 @@ export default function CategoriesScreen() {
 
 	const handleSaveCategory = async (newCategory: any) => {
 		await addCategory(newCategory as Category);
-		setCategories((prev) => [...prev, newCategory]);
+		const updatedCategories = await loadCategories();
+		setCategories(updatedCategories);
 	};
 
 	const handleCategoryPress = (category: any) => {
@@ -72,11 +73,18 @@ export default function CategoriesScreen() {
 		return (
 			<CategoryDetailScreen
 				category={selectedCategory}
-				songs={[]} // TODO: Load songs for this category
+				songs={[]}
 				onBack={() => setSelectedCategory(null)}
-				onAddSong={() => console.log("Add song to category")}
-				onSongPress={(song) => console.log("Song pressed:", song)}
-				onToggleFavorite={(songId) => console.log("Toggle favorite:", songId)}
+				onAddSong={() => {
+					setSelectedCategory(null);
+					setShowCreateModal(true);
+				}}
+				onSongPress={(song) => {
+					// Handle song press if needed
+				}}
+				onToggleFavorite={(songId) => {
+					// Handle toggle favorite if needed
+				}}
 			/>
 		);
 	}

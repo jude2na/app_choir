@@ -62,16 +62,12 @@ export default function AddSongModal({
 			Alert.alert("Error", "Please enter a song title.");
 			return;
 		}
-		if (!selectedCategory) {
-			Alert.alert("Error", "Please select a category for the song.");
-			return;
-		}
 
 		const song = {
 			id: Date.now().toString(),
 			title: songTitle.trim(),
 			composer: composer.trim(),
-			category: selectedCategory,
+			category: selectedCategory || "Uncategorized",
 			lyrics: lyrics.trim(),
 			audioFile: audioFile
 				? {
