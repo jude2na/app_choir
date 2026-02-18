@@ -234,6 +234,9 @@ const initializeDatabase = async (): Promise<void> => {
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Error initializing database:', error);
+    // Reset db to null to force re-initialization on next attempt
+    db = null;
+    dbInitialized = false;
     throw error;
   }
 };
