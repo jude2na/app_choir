@@ -315,8 +315,6 @@ export const loadSongs = async (): Promise<Song[]> => {
   }
 };
 
-import { addCategory } from './storage';
-
 export const addSong = async (song: Song): Promise<void> => {
   const songs = await loadSongs();
   songs.unshift(song);
