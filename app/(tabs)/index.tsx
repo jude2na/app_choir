@@ -29,6 +29,8 @@ import {
 	Song,
 	Member,
 	loadCategories,
+	addCategory,
+	recomputeCategoryCounts,
 } from "../../utils/storage";
 import { useEventBus } from "../../components/EventBus";
 
